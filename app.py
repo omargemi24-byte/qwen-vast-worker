@@ -18,9 +18,10 @@ async def lifespan(app: FastAPI):
     global model
     print("Cargando modelo Qwen3-TTS-0.6B...", flush=True)
     model = Qwen3TTSModel.from_pretrained(
-        "Qwen/Qwen3-TTS-12Hz-0.6B-Base", 
-        device_map="cuda:0", 
-        dtype=torch.bfloat16
+        model_name,
+        torch_dtype=torch.float16,
+        device_map="auto",
+        attn_implementation="sdpa"   # ← añadir esto
     )
     print("Application startup complete.", flush=True)
     print("Application startup complete.", file=sys.stderr, flush=True)
