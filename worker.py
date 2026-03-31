@@ -1,22 +1,28 @@
 import subprocess
 import io
 import base64
+import time
 import numpy as np
 import soundfile as sf
 from vastai import Worker, WorkerConfig, HandlerConfig, LogActionConfig, BenchmarkConfig
 
-# 🛠️ CORRECCIÓN: Redirigir la salida del servidor al archivo log
-log_file = open("server.log", "w")
-subprocess.Popen(["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000"], stdout=log_file, stderr=log_file)
+# 🛠️ Redirigir la salida del servidor al archivo log
+log_file = open("server.log", "w", buffering=1)
+subprocess.Popen(
+    ["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000", "--log-level", "info"],
+    stdout=log_file,
+    stderr=log_file
+)
 
-# 🧠 SOLUCIÓN AUTOMÁTICA: Crear un audio de silencio en RAM para el test
+# Esperamos 3 segundos para que el proceso OS arranque antes de que el SDK empiece a leer el log
+time.sleep(3)
+
+# 🧠 Crear un audio de silencio en RAM para el benchmark
 def get_dummy_wav_b64():
     buf = io.BytesIO()
-    # Genera 0.5 segundos de silencio a 24000Hz
     sf.write(buf, np.zeros(12000), 24000, format='WAV')
     return base64.b64encode(buf.getvalue()).decode('utf-8')
 
-# Guardamos el audio falso en una variable
 DUMMY_AUDIO_B64 = get_dummy_wav_b64()
 
 def dummy_benchmark():
@@ -45,7 +51,6 @@ config = WorkerConfig(
         )
     ],
     log_action_config=LogActionConfig(
-        # 🛠️ CORRECCIÓN: Compatibilidad total con los logs de Uvicorn
         on_load=["Application startup complete.", "INFO:     Application startup complete."], 
         on_error=["RuntimeError", "Traceback", "ERROR"],
         on_info=["INFO"]
