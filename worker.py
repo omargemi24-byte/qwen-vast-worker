@@ -1,12 +1,8 @@
 import subprocess
-import io
-import base64
 import time
-import numpy as np
-import soundfile as sf
 from vastai import Worker, WorkerConfig, HandlerConfig, LogActionConfig, BenchmarkConfig
 
-# 🛠️ Redirigir la salida del servidor al archivo log
+# Lanzar uvicorn ANTES de cualquier import pesado
 log_file = open("server.log", "w", buffering=1)
 subprocess.Popen(
     ["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000", "--log-level", "info"],
@@ -14,11 +10,15 @@ subprocess.Popen(
     stderr=log_file
 )
 
-# Esperamos 3 segundos para que el proceso OS arranque antes de que el SDK empiece a leer el log
-time.sleep(3)
+# Dar tiempo suficiente al proceso OS para arrancar
+time.sleep(5)
 
-# 🧠 Crear un audio de silencio en RAM para el benchmark
+# ✅ Imports pesados DENTRO de la función — no bloquean el arranque de uvicorn
 def get_dummy_wav_b64():
+    import io
+    import base64
+    import numpy as np
+    import soundfile as sf
     buf = io.BytesIO()
     sf.write(buf, np.zeros(12000), 24000, format='WAV')
     return base64.b64encode(buf.getvalue()).decode('utf-8')
@@ -29,7 +29,7 @@ def dummy_benchmark():
     return {
         "text": "Hello world.",
         "language": "English",
-        "voice_ref_audio_b64": DUMMY_AUDIO_B64, 
+        "voice_ref_audio_b64": DUMMY_AUDIO_B64,
         "voice_ref_text": "Hello"
     }
 
@@ -40,7 +40,7 @@ config = WorkerConfig(
     handlers=[
         HandlerConfig(
             route="/generate",
-            allow_parallel_requests=False, 
+            allow_parallel_requests=False,
             max_queue_time=600.0,
             workload_calculator=lambda p: float(len(p.get("text", ""))),
             benchmark_config=BenchmarkConfig(
@@ -51,7 +51,7 @@ config = WorkerConfig(
         )
     ],
     log_action_config=LogActionConfig(
-        on_load=["Application startup complete.", "INFO:     Application startup complete."], 
+        on_load=["Application startup complete.", "INFO:     Application startup complete."],
         on_error=["RuntimeError", "Traceback", "CUDA error", "Killed"],
         on_info=["INFO"]
     )
