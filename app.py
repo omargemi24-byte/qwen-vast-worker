@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from contextlib import asynccontextmanager
 import torch
 import torchaudio
@@ -54,34 +54,68 @@ def agrupacion_inteligente(texto, limite=220):
 
 @app.post("/generate")
 async def generate(request: Request):
-    data = await request.json()
-    text = data["text"]
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+
+    text = data.get("text")
+    if not text:
+        raise HTTPException(status_code=400, detail="Campo 'text' requerido")
+
     lang = data.get("language", "Spanish")
     batch_size = data.get("batch_size", 12)
+    voice_ref_audio_b64 = data.get("voice_ref_audio_b64")
+    voice_ref_text = data.get("voice_ref_text", "")  # ← Opcional ahora
 
-    audio_bytes = base64.b64decode(data["voice_ref_audio_b64"])
-    with open("temp_ref.wav", "wb") as f:
-        f.write(audio_bytes)
+    # --- BENCHMARK / MODO SIN REFERENCIA ---
+    # El SDK de Vast.ai no envía voice_ref_text en el benchmark.
+    # Si falta la referencia de voz, generamos sin clonar (TTS directo).
+    if not voice_ref_text or not voice_ref_audio_b64:
+        with torch.inference_mode():
+            bloques = agrupacion_inteligente(text)
+            lista_idiomas = [lang] * len(bloques)
+            wavs, sr = model.generate(bloques, language=lista_idiomas)
+            audios = [w.cpu().numpy() for w in wavs]
 
-    prompt = model.create_voice_clone_prompt("temp_ref.wav", data["voice_ref_text"])
-    bloques = agrupacion_inteligente(text)
+        audio_final = np.concatenate(audios)
+        buf = io.BytesIO()
+        torchaudio.save(buf, torch.tensor(audio_final).unsqueeze(0), sr, format="wav")
+        buf.seek(0)
+        return {"audio_b64": base64.b64encode(buf.getvalue()).decode("utf-8")}
 
-    audios_generados = []
-    sr = None
+    # --- MODO NORMAL: Voice Clone ---
+    try:
+        audio_bytes = base64.b64decode(voice_ref_audio_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="voice_ref_audio_b64 inválido")
 
-    with torch.inference_mode():
-        for i in range(0, len(bloques), batch_size):
-            lote = bloques[i:i + batch_size]
-            lista_idiomas = [lang] * len(lote)
-            wavs, sr = model.generate_voice_clone(lote, language=lista_idiomas, voice_clone_prompt=prompt)
-            for wav in wavs:
-                audios_generados.append(wav.cpu().numpy())
+    ref_path = f"temp_ref_{os.getpid()}.wav"  # ← Nombre único para evitar race conditions
+    try:
+        with open(ref_path, "wb") as f:
+            f.write(audio_bytes)
+
+        prompt = model.create_voice_clone_prompt(ref_path, voice_ref_text)
+        bloques = agrupacion_inteligente(text)
+
+        audios_generados = []
+        sr = None
+
+        with torch.inference_mode():
+            for i in range(0, len(bloques), batch_size):
+                lote = bloques[i:i + batch_size]
+                lista_idiomas = [lang] * len(lote)
+                wavs, sr = model.generate_voice_clone(
+                    lote, language=lista_idiomas, voice_clone_prompt=prompt
+                )
+                for wav in wavs:
+                    audios_generados.append(wav.cpu().numpy())
+    finally:
+        if os.path.exists(ref_path):
+            os.remove(ref_path)
 
     audio_final = np.concatenate(audios_generados)
-
     buf = io.BytesIO()
     torchaudio.save(buf, torch.tensor(audio_final).unsqueeze(0), sr, format="wav")
-    buf.seek(0)  # ← imprescindible: resetea el puntero al inicio para leer
-
-    os.remove("temp_ref.wav")
-    return {"audio_b64": base64.b64encode(buf.getvalue()).decode('utf-8')}
+    buf.seek(0)
+    return {"audio_b64": base64.b64encode(buf.getvalue()).decode("utf-8")}
