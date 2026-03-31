@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+qwen-tts
+soundfile
+vastai
+torch
+numpy
