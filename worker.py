@@ -31,8 +31,8 @@ config = WorkerConfig(
         )
     ],
     log_action_config=LogActionConfig(
-        on_load=["Application startup complete."], 
-        on_error=["RuntimeError", "Traceback"],
+        on_load=["Application startup complete.", "INFO:     Application startup complete."], # <-- AÑADIDO LOG DE UVICORN
+        on_error=["RuntimeError", "Traceback", "ERROR"],
         on_info=["INFO"]
     )
 )
