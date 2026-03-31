@@ -15,14 +15,14 @@ model = None
 @app.on_event("startup")
 def load_model():
     global model
-    print("Cargando modelo Qwen3-TTS-0.6B...")
+    print("Cargando modelo Qwen3-TTS-0.6B...", flush=True) # <-- AÑADIDO FLUSH
     model = Qwen3TTSModel.from_pretrained(
         "Qwen/Qwen3-TTS-12Hz-0.6B-Base", 
         device_map="cuda:0", 
         dtype=torch.bfloat16, 
         attn_implementation="flash_attention_2"
     )
-    print("Application startup complete.") 
+    print("Application startup complete.", flush=True) # <-- AÑADIDO FLUSH
 
 def agrupacion_inteligente(texto, limite=220):
     frases = re.split(r'(?<=[.!?])\s+', texto)
