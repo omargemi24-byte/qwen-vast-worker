@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
 import torch
 import soundfile as sf
 import io
@@ -7,21 +8,25 @@ import os
 import re
 import textwrap
 import numpy as np
+import sys
 from qwen_tts import Qwen3TTSModel
 
-app = FastAPI()
 model = None
 
-@app.on_event("startup")
-def load_model():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global model
-    print("Cargando modelo Qwen3-TTS-0.6B...", flush=True) # <-- AÑADIDO FLUSH
+    print("Cargando modelo Qwen3-TTS-0.6B...", flush=True)
     model = Qwen3TTSModel.from_pretrained(
         "Qwen/Qwen3-TTS-12Hz-0.6B-Base", 
         device_map="cuda:0", 
         dtype=torch.bfloat16
     )
-    print("Application startup complete.", flush=True) # <-- AÑADIDO FLUSH
+    print("Application startup complete.", flush=True)
+    print("Application startup complete.", file=sys.stderr, flush=True)
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 def agrupacion_inteligente(texto, limite=220):
     frases = re.split(r'(?<=[.!?])\s+', texto)
@@ -47,7 +52,6 @@ async def generate(request: Request):
     lang = data.get("language", "Spanish")
     batch_size = data.get("batch_size", 12)
     
-    # Reconstruir el audio de referencia
     audio_bytes = base64.b64decode(data["voice_ref_audio_b64"])
     with open("temp_ref.wav", "wb") as f:
         f.write(audio_bytes)
@@ -60,15 +64,12 @@ async def generate(request: Request):
     with torch.inference_mode():
         for i in range(0, len(bloques), batch_size):
             lote = bloques[i:i + batch_size]
-            
-            # 🛠️ CORRECCIÓN AQUÍ: Multiplicamos el idioma para que coincida con el lote
             lista_idiomas = [lang] * len(lote)
             wavs, sr = model.generate_voice_clone(lote, language=lista_idiomas, voice_clone_prompt=prompt)
             
             for wav in wavs:
                 audios_generados.append(wav.cpu().numpy())
             
-    # Ensamblar audio
     audio_final = np.concatenate(audios_generados)
     buf = io.BytesIO()
     sf.write(buf, audio_final, sr, format='WAV')
