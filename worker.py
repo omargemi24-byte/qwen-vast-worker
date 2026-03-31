@@ -1,8 +1,11 @@
 import subprocess
+import io
+import base64
+import wave
 import time
 from vastai import Worker, WorkerConfig, HandlerConfig, LogActionConfig, BenchmarkConfig
 
-# Lanzar uvicorn ANTES de cualquier import pesado
+# Lanzar uvicorn ANTES de cualquier otra cosa
 log_file = open("server.log", "w", buffering=1)
 subprocess.Popen(
     ["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000", "--log-level", "info"],
@@ -10,17 +13,16 @@ subprocess.Popen(
     stderr=log_file
 )
 
-# Dar tiempo suficiente al proceso OS para arrancar
 time.sleep(5)
 
-# ✅ Imports pesados DENTRO de la función — no bloquean el arranque de uvicorn
+# ✅ WAV de silencio con módulo built-in, sin soundfile ni numpy
 def get_dummy_wav_b64():
-    import io
-    import base64
-    import numpy as np
-    import soundfile as sf
     buf = io.BytesIO()
-    sf.write(buf, np.zeros(12000), 24000, format='WAV')
+    with wave.open(buf, 'wb') as wf:
+        wf.setnchannels(1)       # Mono
+        wf.setsampwidth(2)       # 16-bit
+        wf.setframerate(24000)   # 24kHz
+        wf.writeframes(b'\x00' * 24000 * 2)  # 1 segundo de silencio
     return base64.b64encode(buf.getvalue()).decode('utf-8')
 
 DUMMY_AUDIO_B64 = get_dummy_wav_b64()
