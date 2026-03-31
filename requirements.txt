@@ -1,6 +1,5 @@
 fastapi
 uvicorn
 qwen-tts
-soundfile
 torch
 numpy
