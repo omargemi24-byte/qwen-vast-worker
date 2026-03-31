@@ -46,7 +46,7 @@ async def generate(request: Request):
     data = await request.json()
     text = data["text"]
     lang = data.get("language", "Spanish")
-    batch_size = data.get("batch_size", 12) # <-- BATCH SIZE CONFIGURABLE AQUÍ
+    batch_size = data.get("batch_size", 12)
     
     # Reconstruir el audio de referencia
     audio_bytes = base64.b64decode(data["voice_ref_audio_b64"])
@@ -58,15 +58,14 @@ async def generate(request: Request):
     
     audios_generados = []
     
-    # --- NUEVA LÓGICA DE BATCHING (Igual que en tu local) ---
     with torch.inference_mode():
         for i in range(0, len(bloques), batch_size):
             lote = bloques[i:i + batch_size]
             
-            # Pasamos la lista de textos enteros al modelo en un solo golpe
-            wavs, sr = model.generate_voice_clone(lote, language=lang, voice_clone_prompt=prompt)
+            # 🛠️ CORRECCIÓN AQUÍ: Multiplicamos el idioma para que coincida con el lote
+            lista_idiomas = [lang] * len(lote)
+            wavs, sr = model.generate_voice_clone(lote, language=lista_idiomas, voice_clone_prompt=prompt)
             
-            # El modelo devuelve una lista de tensores, los procesamos
             for wav in wavs:
                 audios_generados.append(wav.cpu().numpy())
             
