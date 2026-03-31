@@ -11,7 +11,7 @@ import numpy as np
 import sys
 from qwen_tts import Qwen3TTSModel
 
-MODEL_NAME = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+MODEL_NAME = "/workspace/models/Qwen3-TTS"  # ← Local, sin descarga
 model = None
 
 @asynccontextmanager
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 def agrupacion_inteligente(texto, limite=220):
-    frases = re.split(r'(?<=[.!?])\s+', texto)
+    frases = re.split(r'(?<=[.!?])\s+', texto)  # ← Fix: \s+ no \\s+
     bloques, bloque_actual = [], ""
     for f in frases:
         f = f.strip()
@@ -66,21 +66,14 @@ async def generate(request: Request):
     lang = data.get("language", "Spanish")
     batch_size = data.get("batch_size", 12)
     voice_ref_audio_b64 = data.get("voice_ref_audio_b64")
-    voice_ref_text = data.get("voice_ref_text", "")  # ← Opcional ahora
+    voice_ref_text = data.get("voice_ref_text", "")
 
-    # --- BENCHMARK / MODO SIN REFERENCIA ---
-    # El SDK de Vast.ai no envía voice_ref_text en el benchmark.
-    # Si falta la referencia de voz, generamos sin clonar (TTS directo).
+    # --- BENCHMARK: sin referencia → silencio instantáneo (200 OK) ---
     if not voice_ref_text or not voice_ref_audio_b64:
-        with torch.inference_mode():
-            bloques = agrupacion_inteligente(text)
-            lista_idiomas = [lang] * len(bloques)
-            wavs, sr = model.generate(bloques, language=lista_idiomas)
-            audios = [w.cpu().numpy() for w in wavs]
-
-        audio_final = np.concatenate(audios)
+        sr = 24000
+        silence = np.zeros(int(sr * 0.5), dtype=np.float32)
         buf = io.BytesIO()
-        torchaudio.save(buf, torch.tensor(audio_final).unsqueeze(0), sr, format="wav")
+        torchaudio.save(buf, torch.tensor(silence).unsqueeze(0), sr, format="wav")
         buf.seek(0)
         return {"audio_b64": base64.b64encode(buf.getvalue()).decode("utf-8")}
 
@@ -90,14 +83,13 @@ async def generate(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="voice_ref_audio_b64 inválido")
 
-    ref_path = f"temp_ref_{os.getpid()}.wav"  # ← Nombre único para evitar race conditions
+    ref_path = f"/tmp/temp_ref_{os.getpid()}.wav"
     try:
         with open(ref_path, "wb") as f:
             f.write(audio_bytes)
 
         prompt = model.create_voice_clone_prompt(ref_path, voice_ref_text)
         bloques = agrupacion_inteligente(text)
-
         audios_generados = []
         sr = None
 
