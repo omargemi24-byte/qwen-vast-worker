@@ -19,8 +19,7 @@ def load_model():
     model = Qwen3TTSModel.from_pretrained(
         "Qwen/Qwen3-TTS-12Hz-0.6B-Base", 
         device_map="cuda:0", 
-        dtype=torch.bfloat16, 
-        attn_implementation="flash_attention_2"
+        dtype=torch.bfloat16
     )
     print("Application startup complete.", flush=True) # <-- AÑADIDO FLUSH
 
