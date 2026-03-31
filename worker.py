@@ -1,7 +1,9 @@
 import subprocess
 from vastai import Worker, WorkerConfig, HandlerConfig, LogActionConfig, BenchmarkConfig
 
-subprocess.Popen(["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000"])
+# 🛠️ CORRECCIÓN: Redirigir la salida del servidor al archivo log
+log_file = open("server.log", "w")
+subprocess.Popen(["uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000"], stdout=log_file, stderr=log_file)
 
 def dummy_benchmark():
     return {
@@ -14,7 +16,7 @@ def dummy_benchmark():
 config = WorkerConfig(
     model_server_url="http://127.0.0.1",
     model_server_port=8000,
-    model_log_file="/app/server.log", 
+    model_log_file="server.log", # 🛠️ CORRECCIÓN: Usar ruta local
     handlers=[
         HandlerConfig(
             route="/generate",
